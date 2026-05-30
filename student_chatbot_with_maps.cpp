@@ -1,0 +1,751 @@
+#include <iostream>
+#include <string>
+#include <cctype>
+#include <algorithm>
+#include <cstdlib>
+#include <ctime>
+#include <vector>
+#include <iomanip>
+#include <fstream>
+#include <sstream>
+#include <filesystem>
+
+using namespace std;
+namespace fs = filesystem;
+
+// ============================================================================
+// IMAGE DISPLAY & RESIZING FUNCTIONS (Cross-Platform)
+// ============================================================================
+
+// Function to resize/scale images using ImageMagick or built-in tools
+void resizeImage(string inputPath, string outputPath, int width, int height) {
+    if (!fs::exists(inputPath)) {
+        cout << "\n⚠️  Image not found: " << inputPath << endl;
+        return;
+    }
+    
+    #ifdef _WIN32
+        // Windows: Use ImageMagick if available, otherwise use PowerShell
+        string command = "magick \"" + inputPath + "\" -resize " + to_string(width) + 
+                        "x" + to_string(height) + " \"" + outputPath + "\"";
+        int result = system(command.c_str());
+        
+        if (result != 0) {
+            cout << "ℹ️  Install ImageMagick for resizing support: https://imagemagick.org/script/download.php#windows" << endl;
+        } else {
+            cout << "✅ Image resized: " << outputPath << endl;
+        }
+    #elif __APPLE__
+        // macOS: Use sips (System Image Processing System)
+        string command = "sips -Z " + to_string(width) + " \"" + inputPath + 
+                        "\" --out \"" + outputPath + "\" 2>/dev/null";
+        int result = system(command.c_str());
+        
+        if (result == 0) {
+            cout << "✅ Image resized: " << outputPath << endl;
+        } else {
+            cout << "ℹ️  Could not resize image. Install ImageMagick: brew install imagemagick" << endl;
+        }
+    #else
+        // Linux: Use ImageMagick convert
+        string command = "convert \"" + inputPath + "\" -resize " + to_string(width) + 
+                        "x" + to_string(height) + " \"" + outputPath + "\" 2>/dev/null";
+        int result = system(command.c_str());
+        
+        if (result == 0) {
+            cout << "✅ Image resized: " << outputPath << endl;
+        } else {
+            cout << "ℹ️  Install ImageMagick for resizing: sudo apt-get install imagemagick" << endl;
+        }
+    #endif
+}
+
+// Function to scale image for display (smaller version for chat)
+string getScaledImagePath(string originalPath, int width = 800, int height = 600) {
+    if (!fs::exists(originalPath)) {
+        return "";
+    }
+    
+    // Create scaled_images directory if it doesn't exist
+    if (!fs::exists("scaled_images")) {
+        fs::create_directory("scaled_images");
+    }
+    
+    // Generate scaled image filename
+    string filename = fs::path(originalPath).filename().string();
+    string scaledPath = "scaled_images/" + filename;
+    
+    // Only resize if scaled version doesn't exist
+    if (!fs::exists(scaledPath)) {
+        resizeImage(originalPath, scaledPath, width, height);
+    }
+    
+    return scaledPath;
+}
+
+// Function to display images with optional resizing
+void displayImage(string imagePath, bool resize = true, int width = 800, int height = 600) {
+    if (!fs::exists(imagePath)) {
+        cout << "\n⚠️  Image not found: " << imagePath << endl;
+        cout << "Expected location: " << fs::absolute(imagePath) << endl;
+        return;
+    }
+    
+    // Get scaled version if resize requested
+    string displayPath = imagePath;
+    if (resize) {
+        string scaledPath = getScaledImagePath(imagePath, width, height);
+        if (!scaledPath.empty() && fs::exists(scaledPath)) {
+            displayPath = scaledPath;
+        }
+    }
+    
+    #ifdef _WIN32
+        string command = "start \"\" \"" + displayPath + "\"";
+        cout << "\n🖼️  Opening image: " << imagePath << " (Resized: " << width << "x" << height << ")" << endl;
+        system(command.c_str());
+    #elif __APPLE__
+        string command = "open \"" + displayPath + "\"";
+        cout << "\n🖼️  Opening image: " << imagePath << " (Resized: " << width << "x" << height << ")" << endl;
+        system(command.c_str());
+    #else
+        string command = "eog \"" + displayPath + "\" 2>/dev/null || feh \"" + displayPath + 
+                        "\" 2>/dev/null || display \"" + displayPath + "\" 2>/dev/null";
+        cout << "\n🖼️  Opening image: " << imagePath << " (Resized: " << width << "x" << height << ")" << endl;
+        system(command.c_str());
+    #endif
+}
+
+// Function to display multiple images with scaling
+void displayImages(vector<string> imagePaths, bool resize = true, int width = 800, int height = 600) {
+    for (const auto& path : imagePaths) {
+        displayImage(path, resize, width, height);
+        #ifdef _WIN32
+            Sleep(2000);
+        #else
+            sleep(2);
+        #endif
+    }
+}
+
+// Function to display thumbnail preview (small version)
+void displayThumbnail(string imagePath, int thumbWidth = 400, int thumbHeight = 300) {
+    cout << "\n📸 Showing thumbnail preview..." << endl;
+    displayImage(imagePath, true, thumbWidth, thumbHeight);
+}
+
+// Function to open Google Maps with school location
+void openGoogleMaps(double latitude, double longitude, string schoolName) {
+    string mapUrl = "https://www.google.com/maps/search/" + schoolName + 
+                   "/@" + to_string(latitude) + "," + to_string(longitude) + ",15z";
+    
+    #ifdef _WIN32
+        string command = "start \"\" \"" + mapUrl + "\"";
+        cout << "\n🗺️  Opening Google Maps for " << schoolName << endl;
+        system(command.c_str());
+    #elif __APPLE__
+        string command = "open \"" + mapUrl + "\"";
+        cout << "\n🗺️  Opening Google Maps for " << schoolName << endl;
+        system(command.c_str());
+    #else
+        string command = "xdg-open \"" + mapUrl + "\" 2>/dev/null";
+        cout << "\n🗺️  Opening Google Maps for " << schoolName << endl;
+        system(command.c_str());
+    #endif
+}
+
+// Function to create images directory
+void createImagesDirectory() {
+    string imgDir = "campus_images";
+    
+    if (!fs::exists(imgDir)) {
+        try {
+            fs::create_directory(imgDir);
+            cout << "\n📁 Created 'campus_images' directory" << endl;
+            cout << "📁 Created 'scaled_images' directory (for resized images)" << endl;
+            cout << "\n📝 Supported image formats: JPG, JPEG, JFIF" << endl;
+            cout << "📝 Place your images here:" << endl;
+            cout << "   - library.jpg or library.jfif" << endl;
+            cout << "   - registration.jpg or registration.jfif" << endl;
+            cout << "   - advisor.jpg or advisor.jfif" << endl;
+            cout << "   - wifi.jpg or wifi.jfif" << endl;
+            cout << "   - campus_map.jpg or campus_map.jfif" << endl;
+            cout << "   - dining.jpg or dining.jfif" << endl;
+            cout << "   - student_id.jpg or student_id.jfif" << endl;
+            cout << "   - financial_aid.jpg or financial_aid.jfif" << endl;
+            cout << "   - clubs.jpg or clubs.jfif" << endl;
+            cout << "   - tutoring.jpg or tutoring.jfif\n" << endl;
+        } catch (const exception& e) {
+            cout << "⚠️  Could not create directory: " << e.what() << endl;
+        }
+    }
+    
+    if (!fs::exists("scaled_images")) {
+        try {
+            fs::create_directory("scaled_images");
+        } catch (const exception& e) {
+            cout << "⚠️  Could not create scaled_images directory: " << e.what() << endl;
+        }
+    }
+}
+
+// Function to find image file (supports both .jpg and .jfif)
+string findImageFile(string basePath) {
+    // Try .jpg first
+    if (fs::exists(basePath + ".jpg")) {
+        return basePath + ".jpg";
+    }
+    // Try .JPG
+    if (fs::exists(basePath + ".JPG")) {
+        return basePath + ".JPG";
+    }
+    // Try .jpeg
+    if (fs::exists(basePath + ".jpeg")) {
+        return basePath + ".jpeg";
+    }
+    // Try .jfif
+    if (fs::exists(basePath + ".jfif")) {
+        return basePath + ".jfif";
+    }
+    // Try .JFIF
+    if (fs::exists(basePath + ".JFIF")) {
+        return basePath + ".JFIF";
+    }
+    // Original path (will fail gracefully)
+    return basePath;
+}
+
+// ============================================================================
+// GLOBAL VARIABLES
+// ============================================================================
+vector<pair<string, string>> chatHistory;
+int conversationCount = 0;
+
+// School location coordinates (Change these to your school's coordinates)
+const double SCHOOL_LATITUDE = 40.8075;      // Example: University of Pennsylvania
+const double SCHOOL_LONGITUDE = -75.1973;
+const string SCHOOL_NAME = "University Campus";
+const string SCHOOL_ADDRESS = "123 University Avenue";
+
+// Image paths structure
+struct ImagePaths {
+    string base_library = "campus_images/library";
+    string base_registration = "campus_images/registration";
+    string base_advisor = "campus_images/advisor";
+    string base_wifi = "campus_images/wifi";
+    string base_campus_map = "campus_images/campus_map";
+    string base_dining = "campus_images/dining";
+    string base_student_id = "campus_images/student_id";
+    string base_financial_aid = "campus_images/financial_aid";
+    string base_clubs = "campus_images/clubs";
+    string base_tutoring = "campus_images/tutoring";
+};
+
+ImagePaths images;
+
+// ============================================================================
+// VOICE FUNCTIONS
+// ============================================================================
+
+void speak(string text) {
+    string cleanText = text;
+    size_t pos = 0;
+    while ((pos = cleanText.find("@")) != string::npos) {
+        cleanText.replace(pos, 1, "at");
+    }
+    
+    #ifdef _WIN32
+        string command = "PowerShell -Command \"Add-Type –AssemblyName System.Speech; "
+                        "$speak = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+                        "$speak.Rate = 1; "
+                        "$speak.Speak('" + cleanText + "');\"";
+        system(command.c_str());
+    #elif __APPLE__
+        string command = "say \"" + cleanText + "\" 2>/dev/null &";
+        system(command.c_str());
+    #else
+        string command = "espeak \"" + cleanText + "\" 2>/dev/null || festival --tts <<< \"" + cleanText + "\" 2>/dev/null &";
+        system(command.c_str());
+    #endif
+}
+
+string getSpeechInput() {
+    cout << "\n🎤 Listening... (speak now)" << endl;
+    
+    #ifdef _WIN32
+        system("PowerShell -Command \"Add-Type -AssemblyName System.Speech; "
+               "$recognizer = New-Object System.Speech.Recognition.SpeechRecognitionEngine; "
+               "$recognizer.SetInputToDefaultAudioDevice(); "
+               "$result = $recognizer.Recognize(5); "
+               "if ($result -and $result.Text) { Write-Host $result.Text } else { Write-Host '' }\" > speech_input.txt 2>nul");
+        
+        FILE* file = fopen("speech_input.txt", "r");
+        if (file) {
+            char buffer[512];
+            if (fgets(buffer, sizeof(buffer), file) != NULL) {
+                fclose(file);
+                string result(buffer);
+                result.erase(result.find_last_not_of("\n\r") + 1);
+                system("del speech_input.txt >nul 2>&1");
+                if (!result.empty() && result != "No speech detected") {
+                    return result;
+                }
+            }
+            fclose(file);
+        }
+    #endif
+    
+    return "";
+}
+
+// ============================================================================
+// DATE & TIME FUNCTIONS
+// ============================================================================
+
+string getCurrentDateTime() {
+    time_t now = time(0);
+    struct tm* timeinfo = localtime(&now);
+    char buffer[80];
+    strftime(buffer, sizeof(buffer), "%A, %B %d, %Y at %I:%M %p", timeinfo);
+    return string(buffer);
+}
+
+string getCurrentTime() {
+    time_t now = time(0);
+    struct tm* timeinfo = localtime(&now);
+    char buffer[80];
+    strftime(buffer, sizeof(buffer), "%I:%M %p", timeinfo);
+    return string(buffer);
+}
+
+string getDayOfWeek() {
+    time_t now = time(0);
+    struct tm* timeinfo = localtime(&now);
+    char buffer[80];
+    strftime(buffer, sizeof(buffer), "%A", timeinfo);
+    return string(buffer);
+}
+
+// ============================================================================
+// CHAT HISTORY FUNCTIONS
+// ============================================================================
+
+void addToHistory(string question, string answer) {
+    chatHistory.push_back(make_pair(question, answer));
+    conversationCount++;
+}
+
+void displayChatHistory() {
+    if (chatHistory.empty()) {
+        cout << "\n📋 Chat History is empty.\n" << endl;
+        return;
+    }
+    
+    cout << "\n" << "========================================" << endl;
+    cout << "          📋 CHAT HISTORY (" << chatHistory.size() << " messages)" << endl;
+    cout << "========================================\n" << endl;
+    
+    for (int i = 0; i < chatHistory.size(); i++) {
+        cout << "[" << (i + 1) << "] You: " << chatHistory[i].first << endl;
+        cout << "    Bot: " << chatHistory[i].second.substr(0, 80);
+        if (chatHistory[i].second.length() > 80) cout << "...";
+        cout << "\n" << endl;
+    }
+    
+    cout << "========================================\n" << endl;
+}
+
+void saveChatHistory(string filename = "chat_history.txt") {
+    ofstream file(filename);
+    
+    if (!file.is_open()) {
+        cout << "⚠️  Could not save chat history." << endl;
+        return;
+    }
+    
+    file << "===== UNIBOT CHAT HISTORY WITH IMAGES =====" << endl;
+    file << "Date: " << getCurrentDateTime() << endl;
+    file << "Total Messages: " << chatHistory.size() << endl;
+    file << "==========================================\n" << endl;
+    
+    for (int i = 0; i < chatHistory.size(); i++) {
+        file << "[" << (i + 1) << "] USER: " << chatHistory[i].first << endl;
+        file << "    BOT: " << chatHistory[i].second << "\n" << endl;
+    }
+    
+    file.close();
+    cout << "✅ Chat history saved to " << filename << endl;
+}
+
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+string toLowerCase(string str) {
+    transform(str.begin(), str.end(), str.begin(), ::tolower);
+    return str;
+}
+
+string getRandomResponse(int type) {
+    vector<string> greetings = {
+        "Hello there!",
+        "Hi! How can I help?",
+        "Greetings! What do you need?",
+        "Hey! Great to see you!"
+    };
+    
+    vector<string> acknowledgments = {
+        "Great question!",
+        "That's an important question.",
+        "Let me help you with that.",
+        "Good thinking!"
+    };
+    
+    vector<string> farewells = {
+        "Good luck with your studies!",
+        "Hope I helped! See you later!",
+        "Best wishes for your journey here!",
+        "Take care and enjoy campus life!"
+    };
+    
+    if (type == 0) return greetings[rand() % greetings.size()];
+    if (type == 1) return acknowledgments[rand() % acknowledgments.size()];
+    if (type == 2) return farewells[rand() % farewells.size()];
+    
+    return "Have a great day!";
+}
+
+// ============================================================================
+// GREETING & DISPLAY
+// ============================================================================
+
+void displayGreeting() {
+    cout << "\n╔════════════════════════════════════════╗" << endl;
+    cout << "║   🎓 Welcome to UniBot v5.0 🎓       ║" << endl;
+    cout << "║   Image Resizing + Google Maps       ║" << endl;
+    cout << "╚════════════════════════════════════════╝" << endl;
+    
+    cout << "\n✨ FEATURES:" << endl;
+    cout << "   🎤 Voice Recognition" << endl;
+    cout << "   🔊 Voice Output" << endl;
+    cout << "   🖼️  JPG/JFIF Image Support" << endl;
+    cout << "   📐 Image Resizing/Scaling" << endl;
+    cout << "   🗺️  Google Maps Integration" << endl;
+    cout << "   📅 Date & Time" << endl;
+    cout << "   📋 Chat History\n" << endl;
+    
+    string greeting = "Hello! I'm UniBot v5.0 with advanced image features and maps!";
+    cout << "📢 UniBot: " << greeting << endl;
+    speak(greeting);
+}
+
+// ============================================================================
+// MAIN CHATBOT LOGIC
+// ============================================================================
+
+pair<string, string> answerQuestion(string question) {
+    string originalQuestion = question;
+    question = toLowerCase(question);
+    
+    string acknowledgment = getRandomResponse(1);
+    string answer = "";
+    
+    // LIBRARY
+    if (question.find("library") != string::npos) {
+        string imagePath = findImageFile(images.base_library);
+        displayImage(imagePath, true, 800, 600);
+        answer = "The main library is located in the Academic Building, north side of campus. "
+                "It's open Monday through Friday from 8 AM to 10 PM, Saturday 10 AM to 6 PM, "
+                "and Sunday 12 PM to 8 PM. We also have 3 smaller study centers around campus!";
+    }
+    
+    // REGISTRATION
+    else if (question.find("register") != string::npos || 
+             question.find("registration") != string::npos ||
+             question.find("enroll") != string::npos) {
+        string imagePath = findImageFile(images.base_registration);
+        displayImage(imagePath, true, 800, 600);
+        answer = "You can register for classes through the Student Portal online. "
+                "Login with your student ID and password. Course registration opens 2 weeks before "
+                "each semester. Peak times are 8 to 10 AM, so try registering outside peak hours!";
+    }
+    
+    // ADVISOR
+    else if (question.find("advisor") != string::npos ||
+             question.find("academic advisor") != string::npos) {
+        string imagePath = findImageFile(images.base_advisor);
+        displayImage(imagePath, true, 800, 600);
+        answer = "Your academic advisor is assigned based on your major. "
+                "Visit the Student Success Center in Building C, Room 215. "
+                "You can also call (555) 123-4567 or email advisors@university.edu. "
+                "It's recommended to meet with your advisor each semester!";
+    }
+    
+    // WiFi
+    else if (question.find("wifi") != string::npos ||
+             question.find("wi-fi") != string::npos ||
+             question.find("password") != string::npos ||
+             question.find("internet") != string::npos ||
+             question.find("network") != string::npos) {
+        string imagePath = findImageFile(images.base_wifi);
+        displayImage(imagePath, true, 800, 600);
+        answer = "WiFi is free for all students! The network name is UniCampus. "
+                "Go to Settings, WiFi, Select UniCampus, then enter your student ID and password. "
+                "If you have issues, visit IT Support in the Tech Building or call (555) 555-0123.";
+    }
+    
+    // CAMPUS MAP & SCHOOL LOCATION
+    else if ((question.find("where") != string::npos || question.find("located") != string::npos) && 
+             (question.find("school") != string::npos || question.find("campus") != string::npos ||
+              question.find("university") != string::npos)) {
+        
+        cout << "\n📍 School Location Information:" << endl;
+        cout << "   Name: " << SCHOOL_NAME << endl;
+        cout << "   Address: " << SCHOOL_ADDRESS << endl;
+        cout << "   Coordinates: " << SCHOOL_LATITUDE << ", " << SCHOOL_LONGITUDE << endl;
+        
+        string imagePath = findImageFile(images.base_campus_map);
+        displayImage(imagePath, true, 900, 700);
+        
+        // Open Google Maps
+        cout << "\n🗺️  Opening Google Maps with school location..." << endl;
+        openGoogleMaps(SCHOOL_LATITUDE, SCHOOL_LONGITUDE, SCHOOL_NAME);
+        
+        answer = "Our campus is located at " + SCHOOL_ADDRESS + ". "
+                "I've opened Google Maps showing our exact location. "
+                "The main entrance is near the Student Center. Campus tours available Tuesdays and Thursdays at 2 PM!";
+    }
+    
+    // CAMPUS BUILDINGS
+    else if ((question.find("where") != string::npos || question.find("building") != string::npos) && 
+             (question.find("campus") != string::npos || question.find("building") != string::npos)) {
+        string imagePath = findImageFile(images.base_campus_map);
+        displayImage(imagePath, true, 900, 700);
+        answer = "Here's our campus map showing all major buildings and locations. "
+                "The main entrance is near the Student Center.";
+    }
+    
+    // DINING
+    else if (question.find("food") != string::npos ||
+             question.find("dining") != string::npos ||
+             question.find("cafeteria") != string::npos ||
+             question.find("restaurant") != string::npos ||
+             question.find("eat") != string::npos) {
+        string imagePath = findImageFile(images.base_dining);
+        displayImage(imagePath, true, 800, 600);
+        answer = "We have multiple dining options: Main Cafeteria in the Student Center, "
+                "Tech Cafe for quick bites, and the Dining Hall. Most accept student meal plans. "
+                "Meal plans are available online. Check current hours!";
+    }
+    
+    // LIBRARY HOURS
+    else if (question.find("hour") != string::npos || 
+             question.find("open") != string::npos ||
+             question.find("close") != string::npos) {
+        string imagePath = findImageFile(images.base_library);
+        displayImage(imagePath, true, 800, 600);
+        answer = "Main Library Hours: Monday through Friday 8 AM to 10 PM, Saturday 10 AM to 6 PM, "
+                "Sunday 12 PM to 8 PM. Study centers have extended hours until midnight most days!";
+    }
+    
+    // STUDENT ID
+    else if (question.find("student id") != string::npos ||
+             question.find("student card") != string::npos ||
+             question.find("id card") != string::npos ||
+             question.find("identification") != string::npos) {
+        string imagePath = findImageFile(images.base_student_id);
+        displayImage(imagePath, true, 800, 600);
+        answer = "Your student ID card is essential! Pick it up at the Student ID Center "
+                "in the Student Center, Room 101. You'll need it for library access, meal plans, "
+                "and campus events. Processing takes about 15 minutes!";
+    }
+    
+    // FINANCIAL AID
+    else if (question.find("financial aid") != string::npos ||
+             question.find("scholarships") != string::npos ||
+             question.find("tuition") != string::npos ||
+             question.find("aid") != string::npos ||
+             question.find("grants") != string::npos) {
+        string imagePath = findImageFile(images.base_financial_aid);
+        displayImage(imagePath, true, 800, 600);
+        answer = "Visit the Financial Aid Office in Building F, Room 310 for help with: "
+                "FAFSA completion, scholarships, loans, and payment plans. "
+                "Office hours are Monday through Friday, 9 AM to 4 PM!";
+    }
+    
+    // CLUBS
+    else if (question.find("clubs") != string::npos ||
+             question.find("organization") != string::npos ||
+             question.find("activities") != string::npos ||
+             question.find("student life") != string::npos ||
+             question.find("join") != string::npos) {
+        string imagePath = findImageFile(images.base_clubs);
+        displayImage(imagePath, true, 800, 600);
+        answer = "We have 150+ student clubs and organizations! Browse clubs online "
+                "or visit the Student Life Office in the Student Center. Club fair happens during orientation!";
+    }
+    
+    // TUTORING
+    else if (question.find("tutor") != string::npos ||
+             (question.find("help") != string::npos && question.find("study") != string::npos) ||
+             question.find("academic support") != string::npos) {
+        string imagePath = findImageFile(images.base_tutoring);
+        displayImage(imagePath, true, 800, 600);
+        answer = "Free tutoring is available at the Tutoring Center in Building A, Room 105. "
+                "We offer help in Math, Writing, Science, and more. "
+                "Hours: Monday through Thursday 9 AM to 7 PM, Friday 9 AM to 3 PM!";
+    }
+    
+    // DEFAULT
+    else {
+        answer = "I'm not sure about that one, but I can help! "
+                "For questions I can't answer, visit the Student Services Office in Building B, Room 200.";
+    }
+    
+    return make_pair(acknowledgment + " " + answer, answer);
+}
+
+// ============================================================================
+// MAIN PROGRAM
+// ============================================================================
+
+int main() {
+    srand(time(0));
+    
+    string userInput;
+    bool useVoice = false;
+    
+    // Create images directory
+    createImagesDirectory();
+    
+    displayGreeting();
+    
+    cout << "\n📚 CAMPUS TOPICS I CAN HELP WITH:" << endl;
+    cout << "   1. Where is the library?" << endl;
+    cout << "   2. How do I register for classes?" << endl;
+    cout << "   3. Who is my academic advisor?" << endl;
+    cout << "   4. What is the WiFi password?" << endl;
+    cout << "   5. Where is the school located?" << endl;
+    cout << "   6. Where are the campus buildings?" << endl;
+    cout << "   7. What dining options are available?" << endl;
+    cout << "   8. What are the library hours?" << endl;
+    cout << "   9. How do I get a student ID card?" << endl;
+    cout << "   10. How do I apply for financial aid?" << endl;
+    cout << "   11. What clubs and activities are available?" << endl;
+    cout << "   12. Where can I get tutoring help?" << endl;
+    
+    cout << "\n⚙️  SPECIAL COMMANDS:" << endl;
+    cout << "   'resize [width] [height]' - Set image resize dimensions" << endl;
+    cout << "   'voice' - Toggle voice on/off" << endl;
+    cout << "   'history' - View chat history" << endl;
+    cout << "   'save' - Save chat history to file" << endl;
+    cout << "   'quit' or 'exit' - Leave\n" << endl;
+    
+    int imageWidth = 800;
+    int imageHeight = 600;
+    
+    // Main conversation loop
+    while (true) {
+        cout << "\n───────────────────────────────────────" << endl;
+        
+        if (useVoice) {
+            cout << "🎤 You (speak or type): ";
+            userInput = getSpeechInput();
+            
+            if (userInput.empty()) {
+                cout << "📝 Type your question: ";
+                getline(cin, userInput);
+            } else {
+                cout << "You said: " << userInput << endl;
+            }
+        } else {
+            cout << "📝 You: ";
+            getline(cin, userInput);
+        }
+        
+        // Remove extra whitespace
+        userInput.erase(0, userInput.find_first_not_of(" \t"));
+        
+        // Check for resize command
+        if (toLowerCase(userInput).find("resize") != string::npos) {
+            istringstream iss(userInput);
+            string resizeCmd, widthStr, heightStr;
+            iss >> resizeCmd >> widthStr >> heightStr;
+            
+            if (!widthStr.empty() && !heightStr.empty()) {
+                try {
+                    imageWidth = stoi(widthStr);
+                    imageHeight = stoi(heightStr);
+                    cout << "🤖 UniBot: Image resize set to " << imageWidth << "x" << imageHeight << " pixels." << endl;
+                    if (useVoice) speak("Image resize updated.");
+                } catch (...) {
+                    cout << "🤖 UniBot: Invalid dimensions. Use format: resize 1024 768" << endl;
+                }
+            } else {
+                cout << "🤖 UniBot: Usage: resize <width> <height> (e.g., resize 1024 768)" << endl;
+            }
+            continue;
+        }
+        
+        // Check for voice toggle
+        if (toLowerCase(userInput) == "voice") {
+            useVoice = !useVoice;
+            string message = useVoice ? 
+                "Voice mode enabled." : 
+                "Voice mode disabled.";
+            cout << "🤖 UniBot: " << message << endl;
+            if (useVoice) speak(message);
+            continue;
+        }
+        
+        // Check for history command
+        if (toLowerCase(userInput) == "history") {
+            displayChatHistory();
+            continue;
+        }
+        
+        // Check for save command
+        if (toLowerCase(userInput) == "save") {
+            saveChatHistory();
+            continue;
+        }
+        
+        // Check for exit command
+        if (toLowerCase(userInput) == "quit" || 
+            toLowerCase(userInput) == "exit" || 
+            toLowerCase(userInput) == "bye") {
+            string farewell = getRandomResponse(2);
+            cout << "\n🤖 UniBot: " << farewell << " 👋" << endl;
+            speak(farewell);
+            cout << "\n📊 Session Summary:" << endl;
+            cout << "   Total Questions: " << chatHistory.size() << endl;
+            cout << "   Image Size: " << imageWidth << "x" << imageHeight << endl;
+            cout << "   Session Ended: " << getCurrentDateTime() << endl;
+            cout << "╔════════════════════════════════════════╗" << endl;
+            cout << "║  Thank you for using UniBot! Goodbye!  ║" << endl;
+            cout << "╚════════════════════════════════════════╝\n" << endl;
+            break;
+        }
+        
+        // Skip empty input
+        if (userInput.empty()) {
+            cout << "🤖 UniBot: Please ask me a question!\n" << endl;
+            if (useVoice) speak("Please ask me a question!");
+            continue;
+        }
+        
+        // Get and display the response
+        pair<string, string> response = answerQuestion(userInput);
+        cout << "\n🤖 UniBot: " << response.first << endl;
+        
+        // Add to chat history
+        addToHistory(userInput, response.second);
+        
+        // Speak the response if voice is enabled
+        if (useVoice) {
+            speak(response.first);
+        }
+    }
+    
+    return 0;
+}
